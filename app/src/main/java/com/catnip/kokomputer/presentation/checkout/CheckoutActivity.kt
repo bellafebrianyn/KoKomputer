@@ -1,8 +1,10 @@
 package com.catnip.kokomputer.presentation.checkout
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -11,9 +13,14 @@ import androidx.fragment.app.viewModels
 import com.catnip.kokomputer.R
 import com.catnip.kokomputer.data.datasource.cart.CartDataSource
 import com.catnip.kokomputer.data.datasource.cart.CartDatabaseDataSource
+import com.catnip.kokomputer.data.datasource.product.ProductApiDataSource
+import com.catnip.kokomputer.data.datasource.product.ProductDataSource
 import com.catnip.kokomputer.data.repository.CartRepository
 import com.catnip.kokomputer.data.repository.CartRepositoryImpl
+import com.catnip.kokomputer.data.repository.ProductRepository
+import com.catnip.kokomputer.data.repository.ProductRepositoryImpl
 import com.catnip.kokomputer.data.source.local.database.AppDatabase
+import com.catnip.kokomputer.data.source.network.services.KoKomputerApiService
 import com.catnip.kokomputer.databinding.ActivityCheckoutBinding
 import com.catnip.kokomputer.presentation.cart.CartViewModel
 import com.catnip.kokomputer.presentation.checkout.adapter.PriceListAdapter
@@ -30,9 +37,12 @@ class CheckoutActivity : AppCompatActivity() {
 
     private val viewModel: CheckoutViewModel by viewModels {
         val db = AppDatabase.getInstance(this)
+        val service = KoKomputerApiService.invoke()
+        val productDataSource: ProductDataSource = ProductApiDataSource(service)
+        val productRepository: ProductRepository = ProductRepositoryImpl(productDataSource)
         val ds: CartDataSource = CartDatabaseDataSource(db.cartDao())
         val rp: CartRepository = CartRepositoryImpl(ds)
-        GenericViewModelFactory.create(CheckoutViewModel(rp))
+        GenericViewModelFactory.create(CheckoutViewModel(rp, productRepository))
     }
 
     private val adapter: CartListAdapter by lazy {
@@ -56,6 +66,48 @@ class CheckoutActivity : AppCompatActivity() {
         binding.ivBack.setOnClickListener {
             onBackPressed()
         }
+        binding.btnCheckout.setOnClickListener {
+            doCheckout()
+        }
+    }
+
+    private fun doCheckout() {
+        viewModel.checkoutCart().observe(this) {
+            it.proceedWhen(
+                doOnSuccess = {
+                    binding.layoutState.root.isVisible = false
+                    binding.layoutState.pbLoading.isVisible = false
+                    binding.layoutState.tvError.isVisible = false
+                    binding.layoutContent.root.isVisible = true
+                    binding.layoutContent.rvCart.isVisible = true
+                    //viewModel.deleteAllCart()
+                    showSuccessDialog()
+                },
+                doOnLoading = {
+                    binding.layoutState.root.isVisible = true
+                    binding.layoutState.pbLoading.isVisible = true
+                    binding.layoutState.tvError.isVisible = false
+                    binding.layoutContent.root.isVisible = false
+                    binding.layoutContent.rvCart.isVisible = false
+                },
+                doOnError = {
+                    binding.layoutState.root.isVisible = true
+                    binding.layoutState.pbLoading.isVisible = false
+                    binding.layoutContent.root.isVisible = false
+                    binding.layoutContent.rvCart.isVisible = false
+                    Toast.makeText(this, getString(R.string.error_checkout), Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+    }
+
+    private fun showSuccessDialog() {
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.create_order_success))
+            .setPositiveButton(getString(R.string.close)) { _, _ ->
+                finish()
+            }
+        dialog.show()
     }
 
     private fun setupList() {
